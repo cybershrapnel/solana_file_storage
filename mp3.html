@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solana File Loader</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      text-align: center;
+      margin: 20px;
+    }
+    #output-image {
+      max-width: 80%;
+      height: auto;
+      margin: 20px auto;
+      border: 2px solid #444;
+      display: none;
+    }
+    .loader {
+      font-size: 18px;
+      margin-top: 20px;
+    }
+    #download-button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #download-button:hover {
+      background-color: #0056b3;
+    }
+    hr {
+      margin: 30px 0;
+      border-color: #444;
+    }
+    #log {
+      text-align: left;
+      margin: 0 auto;
+      max-width: 80%;
+      font-size: 14px;
+      background-color: #222;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-y: auto;
+      max-height: 300px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Solana File Loader</h1>
+  <p id="status">Initializing...</p>
+  <img id="output-image" alt="Reconstructed File" />
+  <button id="download-button" style="display: none;">Download File</button>
+  <hr />
+  <div id="log"></div>
+
+  <script>
+    const PROXY_ENDPOINT = "https://rpc.nanocheeze.com:8111/sgetnexttxid";
+    let MEQ_TOKEN_ADDRESS = null;
+    let SOLANA_ADDRESS = null;
+
+    async function fetchFileChunks(startTxid) {
+      const REQUEST_DELAY = 50; // Delay between requests in ms
+      const RETRY_DELAY = 10000; // Delay after error for retries
+      const orderedChunks = [];
+      const statusElement = document.getElementById('status');
+      const logElement = document.getElementById('log');
+      let currentTxid = startTxid;
+      let transactionCount = 0;
+
+      async function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+
+      while (currentTxid) {
+        try {
+          console.log(`Processing TXID: ${currentTxid}`);
+          statusElement.textContent = `Processing chunk #${transactionCount + 1}, TXID: ${currentTxid}`;
+
+          // Attempt fetch
+          const response = await fetch(`${PROXY_ENDPOINT}?txid=${currentTxid}`);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+
+          // Fetch MEQ token address and Solana address dynamically if available
+          if (!MEQ_TOKEN_ADDRESS && data.data.meq_token_address) {
+            MEQ_TOKEN_ADDRESS = data.data.meq_token_address;
+          }
+          if (!SOLANA_ADDRESS && data.data.solana_address) {
+            SOLANA_ADDRESS = data.data.solana_address;
+          }
+
+          // Extract chunk data and next TXID
+          currentTxid = data.data.next_txid;
+          let chunkData = data.data.chunk_data;
+
+          // Decode the chunk from Base64
+          try {
+            console.log(chunkData);
+console.log(currentTxid);
+            const binaryChunk = Uint8Array.from(atob(chunkData), c => c.charCodeAt(0));
+            orderedChunks.push(binaryChunk);
+            transactionCount++;
+            logElement.innerHTML += `<p>Chunk #${transactionCount}: TXID ${currentTxid || "None"}, Chunk Size: ${binaryChunk.length} bytes</p>`;
+            console.log(`Next TXID: ${currentTxid || "None (final chunk)"}`);
+          } catch (decodeError) {
+            console.error(`Error decoding chunk at TXID ${currentTxid}: ${decodeError.message}`);
+            logElement.innerHTML += `<p style="color: red;">Error decoding chunk at TXID ${currentTxid}: ${decodeError.message}</p>`;
+            throw new Error(`Failed to decode chunk at TXID ${currentTxid}. Stopping process.`);
+          }
+
+          if (!currentTxid) break; // Stop when there is no next TXID
+          await delay(REQUEST_DELAY); // Respect delay between requests
+        } catch (error) {
+          console.error(`Error processing TXID ${currentTxid}: ${error.message}`);
+
+          if (error.message.includes("429") || error.message.includes("too many requests")) {
+            logElement.innerHTML += `<p>Too many requests. Retrying in ${RETRY_DELAY / 1000} seconds...</p>`;
+            await delay(RETRY_DELAY); // Retry after delay
+            continue; // Retry the current TXID
+          }
+
+          if (currentTxid && currentTxid.length === 88) {
+            currentTxid = currentTxid.slice(0, 87); // Trim to 87 characters
+            console.log(`Retrying with 87-character TXID: ${currentTxid}`);
+            statusElement.textContent = `Retrying chunk #${transactionCount + 1} with 87-character TXID...`;
+            continue;
+          }
+
+          logElement.innerHTML += `<p>Error processing TXID ${currentTxid}: ${error.message}</p>`;
+          break;
+        }
+      }
+
+      // Combine all chunks into a single binary buffer
+      try {
+        let totalSize = 0;
+        logElement.innerHTML += `<p>Total Chunks Processed: ${orderedChunks.length}</p>`;
+        orderedChunks.forEach((chunk, index) => {
+          logElement.innerHTML += `<p>Chunk #${index + 1}: ${chunk.length} bytes</p>`;
+          totalSize += chunk.length;
+        });
+
+        const combinedChunks = new Uint8Array(totalSize);
+        let offset = 0;
+
+        orderedChunks.forEach(chunk => {
+          combinedChunks.set(chunk, offset);
+          offset += chunk.length;
+        });
+
+        logElement.innerHTML += `<p>Final File Size: ${combinedChunks.length} bytes</p>`;
+        return new Blob([combinedChunks], { type: "image/jpeg" });
+      } catch (err) {
+        console.error("Error combining chunks into a blob:", err);
+        throw err;
+      }
+    }
+
+    async function loadImage() {
+      const statusElement = document.getElementById('status');
+      const image = document.getElementById('output-image');
+      const downloadButton = document.getElementById('download-button');
+      const logElement = document.getElementById('log');
+      const startTxid = "5yHfNjMsoiozqPTp7yZFrAzuLwsuiUdDJZaDVtNgmuQxaMXG32t4mUKxntPBp7DF9pewGQAqskmZ3Zk9mjM6jz5u";
+
+      try {
+        statusElement.textContent = "Loading file data from Solana...";
+        const blob = await fetchFileChunks(startTxid);
+
+        const objectUrl = URL.createObjectURL(blob);
+        image.src = objectUrl;
+
+        // Handle successful image load
+        image.onload = () => {
+          image.style.display = 'block';
+          downloadButton.style.display = 'inline-block';
+          statusElement.textContent = "File successfully loaded!";
+          downloadButton.onclick = () => {
+            const a = document.createElement("a");
+            a.href = objectUrl;
+            a.download = "file"; // Adjust name and extension as needed
+            a.click();
+          };
+        };
+
+        // Handle image load failure
+        image.onerror = () => {
+          statusElement.textContent = "Loaded file is not a valid image, but you can still download it.";
+          image.style.display = 'none';
+
+          downloadButton.style.display = 'inline-block';
+          downloadButton.onclick = () => {
+            const a = document.createElement("a");
+            a.href = objectUrl;
+            a.download = "file"; // Adjust name and extension as needed
+            a.click();
+          };
+
+          logElement.innerHTML += `<p>Blob Link: <a href="${objectUrl}" target="_blank">${objectUrl}</a></p>`;
+        };
+
+        logElement.innerHTML += `<p>MEQ Token Address: ${MEQ_TOKEN_ADDRESS || "Unknown"}</p>`;
+        logElement.innerHTML += `<p>Solana Address: ${SOLANA_ADDRESS || "Unknown"}</p>`;
+      } catch (error) {
+        console.error("Error loading file:", error);
+        statusElement.textContent = 'Error loading file.';
+      }
+    }
+
+    loadImage();
+  </script>
+</body>
+</html>
