@@ -89,7 +89,6 @@
       const audioPlayer = document.getElementById('audio-player');
       audioPlayer.src = URL.createObjectURL(mediaSource);
 
-      // Create a buffer source to store audio data
       let sourceBuffer;
 
       mediaSource.addEventListener('sourceopen', () => {
@@ -103,9 +102,10 @@
           const binaryChunk = Uint8Array.from(atob(chunkData), c => c.charCodeAt(0));
           orderedChunks.push(binaryChunk);
           
-          // Append the new chunk to the source buffer
-          if (sourceBuffer && sourceBuffer.updating === false) {
+          // Wait for source buffer to be ready and append the chunk
+          if (sourceBuffer && !sourceBuffer.updating) {
             sourceBuffer.appendBuffer(binaryChunk);
+            console.log(`Appended chunk #${transactionCount + 1}`);
           } else {
             console.log('Waiting for source buffer to be ready...');
           }
@@ -216,11 +216,14 @@
 
         logElement.innerHTML += `<p>MEQ Token Address: ${MEQ_TOKEN_ADDRESS || "Unknown"}</p>`;
         logElement.innerHTML += `<p>Solana Address: ${SOLANA_ADDRESS || "Unknown"}</p>`;
+
       } catch (error) {
-        console.error("Error loading audio:", error);
+        console.error('Error loading audio:', error);
         statusElement.textContent = 'Error loading audio.';
       }
     }
 
     loadAudio();
- 
+  </script>
+</body>
+</html>
