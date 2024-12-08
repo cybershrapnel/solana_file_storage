@@ -72,7 +72,7 @@
     let SOLANA_ADDRESS = null;
 
     async function fetchFileChunks(startTxid) {
-      const REQUEST_DELAY = 5; // Delay between requests in ms
+      const REQUEST_DELAY = 0; // Delay between requests in ms
       const RETRY_DELAY = 10000; // Delay after error for retries
       const orderedChunks = [];
       const statusElement = document.getElementById('status');
@@ -193,48 +193,56 @@
     }
 
     async function loadAudio() {
-      const statusElement = document.getElementById('status');
-      const audioPlayer = document.getElementById('audio-player');
-      const downloadButton = document.getElementById('download-button');
-      const logElement = document.getElementById('log');
-      const startTxid = "5yHfNjMsoiozqPTp7yZFrAzuLwsuiUdDJZaDVtNgmuQxaMXG32t4mUKxntPBp7DF9pewGQAqskmZ3Zk9mjM6jz5u";
+  const statusElement = document.getElementById('status');
+  const audioPlayer = document.getElementById('audio-player');
+  const downloadButton = document.getElementById('download-button');
+  const logElement = document.getElementById('log');
+  const startTxid = "5yHfNjMsoiozqPTp7yZFrAzuLwsuiUdDJZaDVtNgmuQxaMXG32t4mUKxntPBp7DF9pewGQAqskmZ3Zk9mjM6jz5u";
 
-      try {
-        statusElement.textContent = "Loading audio data from Solana...";
-        const blob = await fetchFileChunks(startTxid);
+  try {
+    statusElement.textContent = "Loading audio data from Solana...";
+    const blob = await fetchFileChunks(startTxid);
 
-        const objectUrl = URL.createObjectURL(blob);
-        audioPlayer.src = objectUrl;
-        audioPlayer.style.display = 'block';
+    const objectUrl = URL.createObjectURL(blob);
+    audioPlayer.src = objectUrl;
+    audioPlayer.style.display = 'block';
 
-        // Handle successful audio load
-        audioPlayer.onloadstart = () => {
-          statusElement.textContent = "Audio is loading...";
-        };
+    // Handle audio loading events
+    audioPlayer.onloadstart = () => {
+      statusElement.textContent = "Audio is loading...";
+    };
 
-        audioPlayer.onplay = () => {
-          statusElement.textContent = "Audio is playing!";
-        };
+    audioPlayer.onplay = () => {
+      statusElement.textContent = "Audio is playing...";
+    };
 
-        audioPlayer.onended = () => {
-          statusElement.textContent = "Audio playback finished.";
-        };
+    audioPlayer.onerror = () => {
+      statusElement.textContent = "Error playing audio.";
+    };
 
-        downloadButton.style.display = 'block';
-        downloadButton.onclick = () => {
-          const downloadUrl = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = downloadUrl;
-          link.download = 'reconstructed_audio.mp3';
-          link.click();
-        };
+    // Handle download after the audio is loaded
+    downloadButton.style.display = 'inline-block';
+    downloadButton.onclick = () => {
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = "solana.mp3"; // Adjust name and extension as needed
+      a.click();
+    };
 
-      } catch (error) {
-        console.error("Error loading audio:", error);
-        statusElement.textContent = "Error loading audio.";
-        logElement.innerHTML += `<p style="color: red;">Error loading audio: ${error.message}</p>`;
-      }
-    }
+    // Wait for the audio to be ready before enabling loop and playing
+    audioPlayer.oncanplaythrough = () => {
+      // Now we can safely start playback and enable loop
+      audioPlayer.loop = true; // Enable looping
+      audioPlayer.play(); // Start playing automatically once ready
+      logElement.innerHTML += `<p>Audio is playing and loop is enabled.</p>`;
+    };
+
+  } catch (err) {
+    statusElement.textContent = "Failed to load audio.";
+    console.error("Error loading audio:", err);
+  }
+}
+
 
     loadAudio();
   </script>
